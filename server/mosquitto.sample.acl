@@ -1,0 +1,12 @@
+# Restrict each vehicle to its own topics. Replace DEVICE001 with actual ID.
+user DEVICE001
+ topic read smartcar/DEVICE001/cmd
+ topic write smartcar/DEVICE001/status
+ topic write smartcar/DEVICE001/telemetry
+ topic write smartcar/DEVICE001/ack
+# Backend service account can read telemetry/ack and write commands.
+user server-api
+ topic read smartcar/+/status
+ topic read smartcar/+/telemetry
+ topic read smartcar/+/ack
+ topic write smartcar/+/cmd

@@ -1,0 +1,18 @@
+[Unit]
+Description=SmartCarLock Backend
+After=network.target mosquitto.service
+[Service]
+Type=simple
+User=smartcar
+Group=smartcar
+WorkingDirectory=/opt/smartcarlock/server
+EnvironmentFile=/opt/smartcarlock/.env
+ExecStart=/opt/smartcarlock/venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/smartcarlock/data
+PrivateTmp=true
+[Install]
+WantedBy=multi-user.target
