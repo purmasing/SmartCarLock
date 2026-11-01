@@ -1,0 +1,28 @@
+name: Verify ESP32 firmware
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Test 5-phone enrollment and local API structure
+        run: |
+          python3 tools/static_checks.py
+          python3 tools/test_pairing_host.py
+      - name: Install ESP32 and dependencies
+        run: |
+          arduino-cli core update-index --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli core install esp32:esp32 --additional-urls https://espressif.github.io/arduino-esp32/package_esp32_index.json
+          arduino-cli lib install "TinyGPSPlus" "MFRC522"
+      - name: Copy sketch to Arduino naming layout
+        run: |
+          mkdir -p /tmp/smart_car_lock_mobile_api
+          cp firmware/smart_car_lock_mobile_api.ino /tmp/smart_car_lock_mobile_api/smart_car_lock_mobile_api.ino
+      - name: Compile ESP32-S3
+        run: arduino-cli compile --fqbn esp32:esp32:esp32s3 /tmp/smart_car_lock_mobile_api --warnings all
