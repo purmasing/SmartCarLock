@@ -1,0 +1,87 @@
+name: Build Android and iOS
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate Android scaffold
+        working-directory: app
+        run: flutter create --platforms=android,ios --org ir.smartcarlock --project-name smart_car_lock .
+      - run: python3 tools/configure_flutter.py
+      - name: Dependencies and source check
+        working-directory: app
+        run: |
+          flutter pub get
+          rm -f test/widget_test.dart
+          dart format lib test
+          flutter analyze --no-fatal-infos
+          flutter test
+      - name: Android APK
+        working-directory: app
+        run: flutter build apk --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: smart-car-lock-android-apk-test-signed
+          path: app/build/app/outputs/flutter-apk/app-release.apk
+  ios:
+    runs-on: macos-latest
+    env:
+      IOS_P12_BASE64: ${{ secrets.IOS_P12_BASE64 }}
+      IOS_P12_PASSWORD: ${{ secrets.IOS_P12_PASSWORD }}
+      IOS_PROFILE_BASE64: ${{ secrets.IOS_PROFILE_BASE64 }}
+      IOS_KEYCHAIN_PASSWORD: ${{ secrets.IOS_KEYCHAIN_PASSWORD }}
+      IOS_TEAM_ID: ${{ secrets.IOS_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - name: Generate iOS scaffold
+        working-directory: app
+        run: flutter create --platforms=ios,android --org ir.smartcarlock --project-name smart_car_lock .
+      - run: python3 tools/configure_flutter.py
+      - name: Dependencies
+        working-directory: app
+        run: flutter pub get
+      - name: Build iOS app (unsigned)
+        if: ${{ env.IOS_P12_BASE64 == '' || env.IOS_PROFILE_BASE64 == '' || env.IOS_TEAM_ID == '' }}
+        working-directory: app
+        run: flutter build ios --release --no-codesign
+      - uses: actions/upload-artifact@v4
+        if: ${{ env.IOS_P12_BASE64 == '' || env.IOS_PROFILE_BASE64 == '' || env.IOS_TEAM_ID == '' }}
+        with:
+          name: ios-unsigned-app-not-installable
+          path: app/build/ios/iphoneos/Runner.app
+      - name: Import Apple signing certificate and profile
+        if: ${{ env.IOS_P12_BASE64 != '' && env.IOS_PROFILE_BASE64 != '' && env.IOS_TEAM_ID != '' }}
+        run: |
+          echo "$IOS_P12_BASE64" | base64 -D > "$RUNNER_TEMP/signing.p12"
+          echo "$IOS_PROFILE_BASE64" | base64 -D > "$RUNNER_TEMP/profile.mobileprovision"
+          security create-keychain -p "$IOS_KEYCHAIN_PASSWORD" build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p "$IOS_KEYCHAIN_PASSWORD" build.keychain
+          security import "$RUNNER_TEMP/signing.p12" -k build.keychain -P "$IOS_P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$IOS_KEYCHAIN_PASSWORD" build.keychain
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/"
+          python3 tools/configure_ios_signing.py
+      - name: Export signed IPA
+        if: ${{ env.IOS_P12_BASE64 != '' && env.IOS_PROFILE_BASE64 != '' && env.IOS_TEAM_ID != '' }}
+        working-directory: app
+        run: flutter build ipa --release --export-options-plist=../tools/ExportOptions.plist
+      - uses: actions/upload-artifact@v4
+        if: ${{ env.IOS_P12_BASE64 != '' && env.IOS_PROFILE_BASE64 != '' && env.IOS_TEAM_ID != '' }}
+        with:
+          name: ios-signed-ipa
+          path: app/build/ios/ipa/*.ipa
